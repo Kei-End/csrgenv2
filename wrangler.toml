@@ -1,3 +1,7 @@
-name = "ecc-csr-assistant-hybrid-regenerated"
+name = "ecc-csr-assistant-modular-hybrid"
+main = "_worker.js"
 compatibility_date = "2026-04-04"
-pages_build_output_dir = "."
+
+[assets]
+directory = "."
+binding = "ASSETS"
