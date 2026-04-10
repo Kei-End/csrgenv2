@@ -1,0 +1,13 @@
+{
+  "name": "ecc-csr-assistant-hybrid-regenerated",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler pages dev .",
+    "deploy": "wrangler pages deploy ."
+  },
+  "devDependencies": {
+    "wrangler": "^4.10.0"
+  }
+}
