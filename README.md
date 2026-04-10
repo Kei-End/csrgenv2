@@ -1,13 +1,9 @@
-{
-  "name": "ecc-csr-assistant-modular-hybrid",
-  "private": true,
-  "version": "0.1.1",
-  "type": "module",
-  "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
-  },
-  "devDependencies": {
-    "wrangler": "^4.10.0"
-  }
-}
+# ECC CSR Assistant & CSR Decoder
+
+Regenerated hybrid Cloudflare package based on the uploaded working baseline.
+
+## Included
+- original operator flow from the working baseline
+- researched OS + server combination rules
+- local-only ECC CSR decoder with policy checks and signature verification fallback
+- Cloudflare Pages packaging through Wrangler
