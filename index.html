@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ECC CSR Assistant &amp; Script Generator</title>
+  <title>ECC CSR Assistant &amp; CSR Decoder</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/forge/1.3.1/forge.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsrsasign/11.1.0/jsrsasign-all-min.js"></script>
   <style>
     :root{
       --bg:#f4f7fb;
@@ -339,20 +340,11 @@
       border-left-color:var(--info);
     }
 
-    .panel.ok{
-      background:var(--ok-bg);
-      border-left-color:var(--ok);
-    }
+    .panel.ok{background:#16a34a;border-left-color:#22c55e;color:#ffffff}
 
-    .panel.warn{
-      background:var(--warn-bg);
-      border-left-color:var(--warn);
-    }
+    .panel.warn{background:#d97706;border-left-color:#f59e0b;color:#ffffff}
 
-    .panel.bad{
-      background:var(--bad-bg);
-      border-left-color:var(--bad);
-    }
+    .panel.bad{background:#991b1b;border-left-color:#dc2626;color:#ffffff}
 
     .summary-box{
       display:grid;
@@ -455,20 +447,11 @@
       font-weight:700;
     }
 
-    .badge.ok{
-      background:#dcfce7;
-      color:#166534;
-    }
+    .badge.ok{background:#dcfce7;color:#166534}
 
-    .badge.warn{
-      background:#ffedd5;
-      color:#9a3412;
-    }
+    .badge.warn{background:#fef3c7;color:#92400e}
 
-    .badge.bad{
-      background:#fee2e2;
-      color:#991b1b;
-    }
+    .badge.bad{background:#fee2e2;color:#991b1b}
 
     .badge.unk{
       background:#e2e8f0;
@@ -962,6 +945,15 @@
       text-align:center;
     }
 
+
+    .decoder-policy-table thead th{background:#1e3a8a !important;color:#ffffff !important;font-weight:700}
+    .csr-status-box{border-radius:16px;padding:16px 18px;margin:0 0 16px 0;border-left:6px solid}
+    .csr-status-title{font-weight:700;font-size:15px;margin-bottom:6px;color:#ffffff}
+    .csr-status-desc{font-size:13px;line-height:1.45;color:#ffffff}
+    .csr-status-pass{background:#166534;border-left-color:#22c55e}
+    .csr-status-warning{background:#a16207;border-left-color:#eab308}
+    .csr-status-fail{background:#7f1d1d;border-left-color:#991b1b}
+
     @media (max-width:1080px){
       .layout{
         grid-template-columns:1fr;
@@ -1022,7 +1014,7 @@
 <body>
 <div class="app">
   <div class="hero">
-    <h1>ECC CSR Assistant &amp; Script Generator</h1>
+    <h1>ECC CSR Assistant &amp; CSR Decoder</h1>
     <p>
       Guided CSR generation for Windows and Linux, built around ECC P-384 and SHA-256, with pre-submission checks for outdated server stacks and common failure patterns.
     </p>
@@ -1126,12 +1118,17 @@
             <input id="phpVersion" placeholder="Example: 7.4.33">
           </div>
 
-          <div class="field">
+          <div class="field" id="field_javaVersion" style="display:none;">
+            <label for="javaVersion">Java version</label>
+            <input id="javaVersion" placeholder="Example: 11, 17, 21">
+          </div>
+
+          <div class="field" id="field_opensslVersion" style="display:none;">
             <label for="opensslVersion">OpenSSL version</label>
             <input id="opensslVersion" placeholder="Example: 1.1.1 or 3.0.2">
           </div>
 
-          <div class="field">
+          <div class="field" id="field_opensshVersion" style="display:none;">
             <label for="opensshVersion">OpenSSH version</label>
             <input id="opensshVersion" placeholder="Optional">
           </div>
@@ -1147,24 +1144,20 @@
         <div class="grid">
           <div class="field">
             <label for="cn">Common Name (CN)</label>
-            <input id="cn" placeholder="example.gov.my">
+            <input id="cn" placeholder="example.gov.my" oninput="validateSanField()">
           </div>
 
           <div class="field">
             <label for="san">Subject Alternative Names (SAN)</label>
-            <input id="san" placeholder="example.gov.my, www.example.gov.my">
-            <div class="hint">Comma-separated DNS names only. Leave blank if you do not need SANs.</div>
-            <div id="certValidationBox" class="panel warn" style="display:none;"></div>
+            <input id="san" placeholder="example.gov.my, www.example.gov.my" oninput="validateSanField()">
+            <div class="hint">Comma-separated DNS names only. Leave blank if you want a single-name CSR without SAN extension.</div>
+            <div id="sanValidationBox" class="panel bad" style="display:none; margin-top:8px;"></div>
           </div>
 
           <div class="field">
             <label for="org">Organisation (O)</label>
-            <input id="org" placeholder="Agency Name">
-          </div>
-
-          <div class="field">
-            <label for="ou">Organisational Unit (OU)</label>
-            <input id="ou" placeholder="ICT / Security / Operations">
+            <input id="org" maxlength="64" placeholder="Agency Name" oninput="validateOrganisationField()">
+            <div id="orgValidationBox" class="panel bad" style="display:none; margin-top:8px;"></div>
           </div>
 
           <div class="field">
@@ -1190,7 +1183,6 @@
 
         <div class="actions" style="margin-top:18px;">
           <button class="primary" onclick="generateAll()">Generate scripts &amp; checks</button>
-          <button class="secondary" onclick="showTab('tab-output')">Go to output</button>
         </div>
       </div>
 
@@ -1304,25 +1296,24 @@
           <div class="decoder-top">
             <div class="decoder-brand">
               <div class="decoder-brand-badge">C</div>
-              <div>CSR Decoder</div>
+              <div>ECC CSR Decoder</div>
             </div>
           </div>
 
-          <h2 class="decoder-title">CSR Decoder</h2>
-          <p class="decoder-sub">Decode CSRs.</p>
+          <h2 class="decoder-title">ECC CSR Decoder</h2>
+          <p class="decoder-sub">Decode and inspect ECC Certificate Signing Requests only. Accepted input: PEM CSR or DER CSR.</p>
 
           <div class="decoder-input-panel">
-            <textarea id="pemInput" class="decoder-textarea" placeholder="Paste your PEM-encoded CSR or Certificate here...
+            <textarea id="pemInput" class="decoder-textarea" placeholder="Paste your PEM-encoded ECC CSR here...
 
-(Begins with -----BEGIN CERTIFICATE REQUEST----- or -----BEGIN CERTIFICATE-----)"></textarea>
+(Begins with -----BEGIN CERTIFICATE REQUEST-----)"></textarea>
 
-            <input id="fileInput" class="decoder-file-input" type="file" accept=".pem,.crt,.cer,.csr,.req,.der,.key,.txt" />
+            <input id="fileInput" class="decoder-file-input" type="file" accept=".pem,.csr,.req,.der,.txt" />
 
             <div class="decoder-toolbar">
               <button class="decoder-btn decoder-btn-primary" id="decodeBtn">Decode</button>
               <button class="decoder-btn decoder-btn-outline" id="loadFileBtn">Load from File</button>
-              <button class="decoder-btn decoder-btn-outline" id="loadExampleCsrBtn">Load Example CSR</button>
-              <button class="decoder-btn decoder-btn-outline" id="loadExampleCertBtn">Load Example Certificate</button>
+              <button class="decoder-btn decoder-btn-outline" id="loadExampleCsrBtn">Load ECC Example CSR</button>
               <button class="decoder-btn decoder-btn-danger" id="clearBtn" style="display:none;">Clear</button>
             </div>
 
@@ -1478,7 +1469,7 @@
           </div>
 
           <div class="reference">
-            Manual alignment note: the attached document lists ECC/ECDSA with P-384 and SHA-256, Windows Server 2016+ for IIS, and OpenSSL 1.1.1+ for Nginx and Apache. :contentReference[oaicite:1]{index=1}
+            Manual alignment note: the attached document lists ECC/ECDSA with P-384 and SHA-256, Windows Server 2016+ for IIS, and OpenSSL 1.1.1+ for Nginx and Apache.
           </div>
         </div>
       </div>
@@ -1486,6 +1477,1226 @@
   </div>
 </div>
 
-<script type="module" src="./js/main.js"></script>
+<script>
+  const KB = {
+    baselines: {
+      opensslMin: "1.1.1",
+      opensshMin: "1.1.1",
+      windowsMinYear: 2012,
+      linuxCentOSMin: 7,
+      apacheMin: "2.4.54",
+      xamppMin: "7.4.33",
+      phpMin: "7.4.33",
+      iisMinMajor: "8.0"
+    }
+  };
+
+  const OS_OPTIONS = {
+    Windows: [
+      { value: "Windows Server", label: "Windows Server" },
+      { value: "Windows Client", label: "Windows (Client)" },
+      { value: "Other Windows", label: "Other Windows" }
+    ],
+    Linux: [
+      { value: "CentOS", label: "CentOS" },
+      { value: "RHEL", label: "RHEL" },
+      { value: "Ubuntu", label: "Ubuntu" },
+      { value: "Debian", label: "Debian" },
+      { value: "Rocky", label: "Rocky Linux" },
+      { value: "AlmaLinux", label: "AlmaLinux" },
+      { value: "Other Linux", label: "Other Linux" }
+    ]
+  };
+
+  const SERVER_OPTIONS = {
+    Windows: [
+      { value: "IIS", label: "IIS" },
+      { value: "Apache", label: "Apache" },
+      { value: "Nginx", label: "Nginx" },
+      { value: "XAMPP", label: "XAMPP" },
+      { value: "Tomcat", label: "Tomcat / Java stack" },
+      { value: "Other", label: "Other" }
+    ],
+    Linux: [
+      { value: "Apache", label: "Apache" },
+      { value: "Nginx", label: "Nginx" },
+      { value: "XAMPP", label: "XAMPP" },
+      { value: "Tomcat", label: "Tomcat / Java stack" },
+      { value: "Other", label: "Other" }
+    ]
+  };
+
+
+
+  const ENVIRONMENT_FIELD_RULES = {
+    Windows: { default: [], IIS: ["field_iisVersion","field_iisMethod"], Apache: ["field_apacheVersion","field_opensslVersion"], Nginx: ["field_nginxVersion","field_opensslVersion"], XAMPP: ["field_apacheVersion","field_xamppVersion","field_phpVersion","field_opensslVersion"], Tomcat: ["field_javaVersion"], Other: [] },
+    Linux: { default: ["field_opensshVersion"], Apache: ["field_apacheVersion","field_opensslVersion","field_opensshVersion"], Nginx: ["field_nginxVersion","field_opensslVersion","field_opensshVersion"], XAMPP: ["field_apacheVersion","field_xamppVersion","field_phpVersion","field_opensslVersion","field_opensshVersion"], Tomcat: ["field_javaVersion","field_opensshVersion"], Other: ["field_opensshVersion"] }
+  };
+  const ALL_ENVIRONMENT_FIELDS = ["field_iisVersion","field_iisMethod","field_nginxVersion","field_apacheVersion","field_xamppVersion","field_phpVersion","field_javaVersion","field_opensslVersion","field_opensshVersion"];
+
+  let lastDownloads = [];
+  let lastAssessment = null;
+  let lastFormData = null;
+
+  function byId(id){ return document.getElementById(id); }
+
+  function sanitizeUiText(str){ return String(str || "").replace(/:contentReference\[.*?\]\{.*?\}/g, ""); }
+
+  function showTab(tabId, btn){
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    byId(tabId).classList.add("active");
+
+    if (btn) {
+      btn.classList.add("active");
+    } else {
+      document.querySelectorAll(".tab-btn").forEach(b => {
+        const onclickText = b.getAttribute("onclick") || "";
+        if (onclickText.includes(tabId)) b.classList.add("active");
+      });
+    }
+  }
+
+  function showSubtab(id, btn){
+    document.querySelectorAll(".subtab-panel").forEach(p => p.classList.remove("active"));
+    document.querySelectorAll(".subtab-btn").forEach(b => b.classList.remove("active"));
+    byId(id).classList.add("active");
+    if (btn) btn.classList.add("active");
+  }
+
+  function toggleAcc(btn){
+    const item = btn.closest(".acc-item");
+    item.classList.toggle("open");
+    btn.querySelector("span").textContent = item.classList.contains("open") ? "−" : "+";
+  }
+
+  function toggleCollapse(btn){
+    const item = btn.closest(".collapsible");
+    item.classList.toggle("open");
+    btn.querySelector("span:last-child").textContent = item.classList.contains("open") ? "−" : "+";
+  }
+
+  function fillSelect(selectEl, options){
+    selectEl.innerHTML = "";
+    options.forEach(opt => {
+      const o = document.createElement("option");
+      o.value = opt.value;
+      o.textContent = opt.label;
+      selectEl.appendChild(o);
+    });
+  }
+
+  function show(id, visible){
+    byId(id).style.display = visible ? "" : "none";
+  }
+
+  function isFieldVisible(id){
+    const el = byId(id);
+    return !!el && el.style.display !== "none";
+  }
+
+  function getVisibleEnvironmentSnapshot(data){
+    const items = [
+      `${data.platform} / ${data.osName} ${data.osVersion || "(version not provided)"}`
+    ];
+
+    if (data.server) items.push(`${data.server}`);
+    if (isFieldVisible("field_iisVersion") && data.iisVersion) items.push(`IIS ${data.iisVersion}`);
+    if (isFieldVisible("field_apacheVersion") && data.apacheVersion) items.push(`Apache ${data.apacheVersion}`);
+    if (isFieldVisible("field_nginxVersion") && data.nginxVersion) items.push(`Nginx ${data.nginxVersion}`);
+    if (isFieldVisible("field_xamppVersion") && data.xamppVersion) items.push(`XAMPP ${data.xamppVersion}`);
+    if (isFieldVisible("field_phpVersion") && data.phpVersion) items.push(`PHP ${data.phpVersion}`);
+    if (isFieldVisible("field_javaVersion") && data.javaVersion) items.push(`Java ${data.javaVersion}`);
+    if (isFieldVisible("field_opensslVersion") && data.opensslVersion) items.push(`OpenSSL ${data.opensslVersion}`);
+    if (isFieldVisible("field_opensshVersion") && data.opensshVersion) items.push(`OpenSSH ${data.opensshVersion}`);
+    if (data.cn) items.push(`CN ${data.cn}`);
+
+    return items.map(x => `<li>${x}</li>`).join("");
+  }
+
+  function onPlatformChange(){
+    const platform = byId("platform").value;
+    fillSelect(byId("osName"), OS_OPTIONS[platform]);
+    fillSelect(byId("server"), SERVER_OPTIONS[platform]);
+    applyEnvironmentRules();
+    syncOutputTabs();
+  }
+
+  function applyEnvironmentRules(){
+    const platform = byId("platform").value;
+    const server = byId("server").value;
+    ALL_ENVIRONMENT_FIELDS.forEach(id => show(id, false));
+    const rules = ENVIRONMENT_FIELD_RULES[platform] || { default: [] };
+    (rules.default || []).forEach(id => show(id, true));
+    (rules[server] || []).forEach(id => show(id, true));
+  }
+
+  function onServerChange(){
+    applyEnvironmentRules();
+    syncOutputTabs();
+  }
+
+  function syncOutputTabs(){
+    const platform = byId("platform").value;
+    const server = byId("server").value;
+    const iisMethod = byId("iisMethod") ? byId("iisMethod").value : "powershell";
+
+    const btnLinux = byId("btnOutLinux");
+    const btnPS = byId("btnOutPS");
+    const btnGUI = byId("btnOutGUI");
+    const panelLinux = byId("out-linux");
+    const panelPS = byId("out-ps");
+    const panelGUI = byId("out-gui");
+
+    [btnLinux, btnPS, btnGUI].forEach(el => el.style.display = "none");
+    [panelLinux, panelPS, panelGUI].forEach(el => {
+      el.classList.remove("active");
+      el.style.display = "none";
+    });
+    document.querySelectorAll(".subtab-btn").forEach(b => b.classList.remove("active"));
+
+    if (platform === "Linux") {
+      btnLinux.style.display = "";
+      panelLinux.style.display = "block";
+      showSubtab("out-linux", btnLinux);
+      return;
+    }
+
+    if (server === "IIS") {
+      if (iisMethod === "powershell") {
+        btnPS.style.display = "";
+        panelPS.style.display = "block";
+        showSubtab("out-ps", btnPS);
+      } else if (iisMethod === "gui") {
+        btnGUI.style.display = "";
+        panelGUI.style.display = "block";
+        showSubtab("out-gui", btnGUI);
+      } else {
+        btnPS.style.display = "";
+        btnGUI.style.display = "";
+        panelPS.style.display = "block";
+        panelGUI.style.display = "block";
+        showSubtab("out-ps", btnPS);
+      }
+      return;
+    }
+
+    btnPS.style.display = "";
+    panelPS.style.display = "block";
+    showSubtab("out-ps", btnPS);
+  }
+
+  function showOutputTabExplicitly(){
+    const btn = Array.from(document.querySelectorAll('.tab-btn')).find(b => (b.getAttribute('onclick') || '').includes('tab-output'));
+    showTab('tab-output', btn || null);
+  }
+
+  function normalise(v){
+    return String(v || "").trim();
+  }
+
+  function parseNums(v){
+    const m = String(v || "").match(/\d+/g);
+    return m ? m.map(n => parseInt(n, 10)) : null;
+  }
+
+  function compareVersions(a, b){
+    const x = parseNums(a);
+    const y = parseNums(b);
+    if (!x || !y) return null;
+    const len = Math.max(x.length, y.length);
+    for (let i = 0; i < len; i++) {
+      const p = x[i] || 0;
+      const q = y[i] || 0;
+      if (p > q) return 1;
+      if (p < q) return -1;
+    }
+    return 0;
+  }
+
+  function extractWindowsYear(text){
+    const m = String(text || "").match(/(2008|2012|2016|2019|2022|2025)/);
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  function extractMajor(text){
+    const m = String(text || "").match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  function safeFileBase(cn){
+    const out = String(cn || "server").trim().replace(/[^a-zA-Z0-9._-]/g, "_");
+    return out || "server";
+  }
+
+  function buildSANList(rawSAN){
+    const arr = rawSAN.split(",").map(x => x.trim()).filter(Boolean);
+    const seen = new Set();
+    return arr.filter(x => {
+      const k = x.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }
+
+  function isValidDnsName(value){
+    const v = String(value || "").trim();
+    if (!v) return false;
+    if (v.length > 253) return false;
+
+    const wildcard = /^\*\.[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
+    const fqdn = /^(?=.{1,253}$)(?!-)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/;
+
+    return wildcard.test(v) || fqdn.test(v);
+  }
+
+  function getSanValidation(data){
+    const errors = [];
+    const guidance = [];
+    const cnLower = String(data.cn || "").trim().toLowerCase();
+
+    if (data.san && !data.sans.length) {
+      errors.push("SAN field contains no usable DNS name.");
+    }
+
+    if (data.sans.length) {
+      const invalidSans = data.sans.filter(x => !isValidDnsName(x));
+      if (invalidSans.length) {
+        errors.push(`SAN contains invalid DNS name(s): ${invalidSans.join(", ")}.`);
+      }
+
+      const duplicateCn = data.sans.find(x => x.toLowerCase() === cnLower);
+      if (cnLower && duplicateCn) {
+        errors.push(`CN must not be repeated in SAN. Remove "${duplicateCn}" from SAN or change the CN.`);
+        guidance.push("Use CN for the primary hostname. Use SAN only for additional hostnames needed for multidomain OV or EV requests.");
+      }
+    }
+
+    if (data.sans.length && !guidance.length) {
+      guidance.push("Each SAN entry must be a valid DNS hostname such as portal.example.gov.my. Separate entries with commas only.");
+    }
+
+    return { errors, guidance };
+  }
+
+  function renderSanValidation(validation){
+    const box = byId("sanValidationBox");
+    if (!box) return;
+
+    if (!validation.errors.length) {
+      box.style.display = "none";
+      box.innerHTML = "";
+      return;
+    }
+
+    const guideHtml = validation.guidance.length
+      ? `<div style="margin-top:8px;"><strong>Guidance</strong><ul style="margin:6px 0 0 18px;">${validation.guidance.map(x => `<li>${x}</li>`).join("")}</ul></div>`
+      : "";
+
+    box.style.display = "block";
+    box.innerHTML = `<strong>SAN input needs correction</strong><ul style="margin:6px 0 0 18px;">${validation.errors.map(x => `<li>${x}</li>`).join("")}</ul>${guideHtml}`;
+  }
+
+  function validateSanField(){
+    const data = {
+      cn: normalise(byId("cn").value),
+      san: normalise(byId("san").value)
+    };
+    data.sans = buildSANList(data.san);
+    renderSanValidation(getSanValidation(data));
+  }
+
+
+  function validateOrganisationName(value){
+    const errors = [];
+    const v = String(value || "").trim();
+
+    if (!v) {
+      errors.push("Organisation name is required.");
+      return errors;
+    }
+
+    if (v.length > 64) {
+      errors.push("Organisation name must not exceed 64 characters.");
+    }
+
+    if (v.includes("_")) {
+      errors.push("Organisation name must not contain underscore (_) characters.");
+    }
+
+    return errors;
+  }
+
+  function renderOrganisationValidation(errors){
+    const box = byId("orgValidationBox");
+    if (!box) return;
+
+    if (!errors.length) {
+      box.style.display = "none";
+      box.innerHTML = "";
+      return;
+    }
+
+    box.style.display = "block";
+    box.innerHTML = `<strong>Organisation field needs correction</strong><ul style="margin:6px 0 0 18px;">${errors.map(x => `<li>${x}</li>`).join("")}</ul><div style="margin-top:8px;"><strong>Guidance</strong><ul style="margin:6px 0 0 18px;"><li>Keep the organisation name within 64 characters.</li><li>Use spaces or hyphens instead of underscore.</li></ul></div>`;
+  }
+
+  function validateOrganisationField(){
+    renderOrganisationValidation(validateOrganisationName(normalise(byId("org").value)));
+  }
+
+  function subjectLine(data){
+    const parts = [
+      `CN=${data.cn}`,
+      `O=${data.org}`,
+      `L=${data.city}`,
+      `S=${data.state}`,
+      `C=${data.country}`
+    ];
+    if (data.email) parts.push(`E=${data.email}`);
+    return parts.join(", ");
+  }
+
+  function escapePS(text){
+    return String(text || "").replace(/`/g, "``");
+  }
+
+  function readForm(){
+    const data = {
+      platform: normalise(byId("platform").value),
+      osName: normalise(byId("osName").value),
+      osVersion: normalise(byId("osVersion").value),
+      server: normalise(byId("server").value),
+      iisVersion: normalise(byId("iisVersion").value),
+      iisMethod: byId("iisMethod") ? normalise(byId("iisMethod").value) : "powershell",
+      nginxVersion: normalise(byId("nginxVersion").value),
+      apacheVersion: normalise(byId("apacheVersion").value),
+      xamppVersion: normalise(byId("xamppVersion").value),
+      phpVersion: normalise(byId("phpVersion").value),
+      javaVersion: byId("javaVersion") ? normalise(byId("javaVersion").value) : "",
+      opensslVersion: normalise(byId("opensslVersion").value),
+      opensshVersion: normalise(byId("opensshVersion").value),
+      cn: normalise(byId("cn").value),
+      san: normalise(byId("san").value),
+      org: normalise(byId("org").value),
+      city: normalise(byId("city").value),
+      state: normalise(byId("state").value),
+      country: normalise(byId("country").value).toUpperCase(),
+      email: normalise(byId("email").value)
+    };
+    data.sans = buildSANList(data.san);
+    data.fileBase = safeFileBase(data.cn);
+    return data;
+  }
+
+  function validate(data){
+    const missing = [];
+    const errors = [];
+
+    if (!data.cn) missing.push("CN");
+    if (!data.org) missing.push("O");
+    if (!data.city) missing.push("L");
+    if (!data.state) missing.push("ST");
+    if (!data.country || data.country.length !== 2) missing.push("C");
+
+    if (data.cn && !isValidDnsName(data.cn)) {
+      errors.push("CN must be a valid DNS hostname such as example.gov.my or portal.example.gov.my.");
+    }
+
+    errors.push(...validateOrganisationName(data.org));
+
+    const sanValidation = getSanValidation(data);
+    errors.push(...sanValidation.errors);
+
+    return { missing, errors, sanValidation };
+  }
+
+  function buildLinuxScript(data){
+    const keyFile = `${data.fileBase}.key`;
+    const csrFile = `${data.fileBase}.csr`;
+
+    let installHint = "";
+    if (data.server === "Nginx") {
+      installHint =
+`# Nginx reminder
+# ssl_certificate     /path/to/fullchain.pem;
+# ssl_certificate_key /path/to/${keyFile};`;
+    } else if (data.server === "Apache") {
+      installHint =
+`# Apache reminder
+# SSLCertificateFile    "/path/to/cert.pem"
+# SSLCertificateKeyFile "/path/to/${keyFile}"`;
+    }
+
+    const addExtLine = data.sans.length
+      ? ` \
+-addext "subjectAltName = ${data.sans.map(x => `DNS:${x}`).join(",")}"`
+      : "";
+
+    return `# Linux CSR generation
+# ECC curve: secp384r1 (P-384)
+# Hash: SHA-256
+# Expected CSR signature: ecdsa-with-SHA256
+
+set -euo pipefail
+
+KEY_FILE="${keyFile}"
+CSR_FILE="${csrFile}"
+
+openssl ecparam -name secp384r1 -genkey -noout -out "$KEY_FILE"
+
+openssl req -new -sha256 -key "$KEY_FILE" -out "$CSR_FILE" \
+-subj "/C=${data.country}/ST=${data.state}/L=${data.city}/O=${data.org}/CN=${data.cn}${data.email ? `/emailAddress=${data.email}` : ""}"${addExtLine}
+
+openssl req -in "$CSR_FILE" -noout -text
+
+${installHint}`;
+  }
+
+  function buildWindowsINF(data){
+    const sanLines = data.sans.map(x => `_continue_ = "DNS=${x}&"`).join("\n");
+    const extensionsBlock = data.sans.length
+      ? `\n[Extensions]\n2.5.29.17 = "{text}"\n${sanLines}\n`
+      : "\n";
+
+    return `[Version]
+Signature="$Windows NT$"
+
+[NewRequest]
+Subject = "${subjectLine(data)}"
+MachineKeySet = TRUE
+Exportable = FALSE
+RequestType = PKCS10
+KeyAlgorithm = ECDSA_P384
+KeyLength = 384
+HashAlgorithm = SHA256
+ProviderName = "Microsoft Software Key Storage Provider"
+KeyUsage = 0x80${extensionsBlock}`;
+  }
+
+  function buildWindowsPowerShell(data){
+    const infName = `${data.fileBase}-request.inf`;
+    const reqName = `${data.fileBase}-request.req`;
+    const inf = buildWindowsINF(data);
+
+    return `# Windows PowerShell CSR generation
+# ECC curve: P-384
+# Hash: SHA-256
+# Uses certreq and Microsoft Software Key Storage Provider
+
+$InfPath = Join-Path (Get-Location) "${infName}"
+$ReqPath = Join-Path (Get-Location) "${reqName}"
+
+$InfContent = @"
+${escapePS(inf)}
+"@
+
+Set-Content -Path $InfPath -Value $InfContent -Encoding ascii
+
+Write-Host "Generating ECC CSR request..." -ForegroundColor Cyan
+certreq -new $InfPath $ReqPath
+
+Write-Host ""
+Write-Host "Request file created:" $ReqPath -ForegroundColor Green
+Write-Host ""
+Write-Host "Next steps:"
+Write-Host "1. Submit the .req file to the CA portal"
+Write-Host "2. When certificate is issued, accept it with:"
+Write-Host "   certreq -accept .\\issued.cer"
+Write-Host ""
+Write-Host "Reminder: keep the private key in the Windows certificate store."`;
+  }
+
+  function buildWindowsGUIGuidance(data){
+    return `# IIS GUI guidance
+# Target profile:
+# - Provider: Microsoft Software Key Storage Provider
+# - Bit Length: 384
+# - ECC / ECDSA
+
+1. Open IIS Manager
+2. Select the server node
+3. Open Server Certificates
+4. Choose Create Certificate Request
+5. Fill in:
+   - CN = ${data.cn}
+   - O  = ${data.org}
+   - L  = ${data.city}
+   - ST = ${data.state}
+   - C  = ${data.country}
+6. Under Cryptographic Service Provider:
+   - Provider: Microsoft Software Key Storage Provider
+   - Bit Length: 384
+7. Save the CSR
+8. Verify the CSR after generation
+
+Note:
+If SAN must be carried in the request itself, PowerShell + certreq is usually the cleaner scripted path.`;
+  }
+
+  function assess(data){
+    const table = [];
+    const issues = [];
+    let score = 100;
+
+    function add(item, detected, rule, status, explanation){
+      table.push({ item, detected, rule, status, explanation });
+      if (status === "Warning") score -= 10;
+      if (status === "Fail") score -= 25;
+      if (status !== "OK" && explanation) issues.push({ status, text: explanation });
+    }
+
+    if (data.sans.length === 0) add("SAN", "Not provided", "Optional unless additional hostnames are required", "OK", "");
+    else add("SAN", data.sans.join(", "), "Comma-separated DNS names only", "OK", "");
+
+    if (isFieldVisible("field_opensslVersion")) {
+      if (data.opensslVersion) {
+        const c = compareVersions(data.opensslVersion, KB.baselines.opensslMin);
+        if (c === null) add("OpenSSL", data.opensslVersion, `>= ${KB.baselines.opensslMin}`, "Warning", "OpenSSL version could not be parsed clearly.");
+        else if (c < 0) add("OpenSSL", data.opensslVersion, `>= ${KB.baselines.opensslMin}`, "Fail", `OpenSSL appears below ${KB.baselines.opensslMin}.`);
+        else add("OpenSSL", data.opensslVersion, `>= ${KB.baselines.opensslMin}`, "OK", "");
+      } else add("OpenSSL", "Not provided", `>= ${KB.baselines.opensslMin}`, "Warning", "OpenSSL version not provided.");
+    }
+
+    if (isFieldVisible("field_opensshVersion")) {
+      if (data.opensshVersion) {
+        const c = compareVersions(data.opensshVersion, KB.baselines.opensshMin);
+        if (c === null) add("OpenSSH", data.opensshVersion, `>= ${KB.baselines.opensshMin}`, "Warning", "OpenSSH version could not be parsed clearly.");
+        else if (c < 0) add("OpenSSH", data.opensshVersion, `>= ${KB.baselines.opensshMin}`, "Fail", `OpenSSH appears below ${KB.baselines.opensshMin}.`);
+        else add("OpenSSH", data.opensshVersion, `>= ${KB.baselines.opensshMin}`, "OK", "");
+      } else {
+        add("OpenSSH", "Not provided", `>= ${KB.baselines.opensshMin}`, "Unknown", "");
+        score -= 3;
+      }
+    }
+
+    if (data.platform === "Windows") {
+      const year = extractWindowsYear(data.osVersion) || extractMajor(data.osVersion);
+      if (year === null) add("Windows OS", data.osVersion || "Not provided", `>= ${KB.baselines.windowsMinYear}`, "Warning", "Windows version could not be parsed.");
+      else if (year < KB.baselines.windowsMinYear) add("Windows OS", String(year), `>= ${KB.baselines.windowsMinYear}`, "Fail", `Windows appears below Server ${KB.baselines.windowsMinYear}.`);
+      else add("Windows OS", String(year), `>= ${KB.baselines.windowsMinYear}`, "OK", "");
+
+      if (isFieldVisible("field_iisVersion")) {
+        if (data.iisVersion) {
+          const c = compareVersions(data.iisVersion, KB.baselines.iisMinMajor);
+          if (c === null) add("IIS", data.iisVersion, `>= ${KB.baselines.iisMinMajor}`, "Warning", "IIS version could not be parsed clearly.");
+          else if (c < 0) add("IIS", data.iisVersion, `>= ${KB.baselines.iisMinMajor}`, "Fail", `IIS appears below ${KB.baselines.iisMinMajor}. Older IIS can make ECC request handling or deployment harder.`);
+          else add("IIS", data.iisVersion, `>= ${KB.baselines.iisMinMajor}`, "OK", "");
+        } else add("IIS", "Not provided", `>= ${KB.baselines.iisMinMajor}`, "Warning", "IIS version not provided.");
+      }
+    }
+
+    if (data.platform === "Linux" && data.osName === "CentOS") {
+      const major = extractMajor(data.osVersion);
+      if (major === null) add("CentOS", data.osVersion || "Not provided", `>= ${KB.baselines.linuxCentOSMin}`, "Warning", "CentOS version could not be parsed.");
+      else if (major < KB.baselines.linuxCentOSMin) add("CentOS", String(major), `>= ${KB.baselines.linuxCentOSMin}`, "Fail", `CentOS appears below ${KB.baselines.linuxCentOSMin}.`);
+      else add("CentOS", String(major), `>= ${KB.baselines.linuxCentOSMin}`, "OK", "");
+    }
+
+    if (isFieldVisible("field_apacheVersion")) {
+      if (data.apacheVersion) {
+        const c = compareVersions(data.apacheVersion, KB.baselines.apacheMin);
+        if (c === null) add("Apache", data.apacheVersion, `>= ${KB.baselines.apacheMin}`, "Warning", "Apache version could not be parsed clearly.");
+        else if (c < 0) add("Apache", data.apacheVersion, `>= ${KB.baselines.apacheMin}`, "Fail", `Apache appears below ${KB.baselines.apacheMin}.`);
+        else add("Apache", data.apacheVersion, `>= ${KB.baselines.apacheMin}`, "OK", "");
+      } else add("Apache", "Not provided", `>= ${KB.baselines.apacheMin}`, "Warning", "Apache version not provided.");
+    }
+
+    if (isFieldVisible("field_xamppVersion")) {
+      if (data.xamppVersion) {
+        const c = compareVersions(data.xamppVersion, KB.baselines.xamppMin);
+        if (c === null) add("XAMPP", data.xamppVersion, `>= ${KB.baselines.xamppMin}`, "Warning", "XAMPP version could not be parsed clearly.");
+        else if (c < 0) add("XAMPP", data.xamppVersion, `>= ${KB.baselines.xamppMin}`, "Fail", `XAMPP appears below ${KB.baselines.xamppMin}.`);
+        else add("XAMPP", data.xamppVersion, `>= ${KB.baselines.xamppMin}`, "OK", "");
+      } else add("XAMPP", "Not provided", `>= ${KB.baselines.xamppMin}`, "Warning", "XAMPP version not provided.");
+    }
+
+    if (isFieldVisible("field_phpVersion")) {
+      if (data.phpVersion) {
+        const c = compareVersions(data.phpVersion, KB.baselines.phpMin);
+        if (c === null) add("PHP", data.phpVersion, `>= ${KB.baselines.phpMin}`, "Warning", "PHP version could not be parsed clearly.");
+        else if (c < 0) add("PHP", data.phpVersion, `>= ${KB.baselines.phpMin}`, "Fail", `PHP appears below ${KB.baselines.phpMin}.`);
+        else add("PHP", data.phpVersion, `>= ${KB.baselines.phpMin}`, "OK", "");
+      } else add("PHP", "Not provided", `>= ${KB.baselines.phpMin}`, "Warning", "PHP version not provided.");
+    }
+
+    if (data.platform === "Windows" && data.server === "Apache") add("Apache on Windows", data.apacheVersion || "Not provided", "Supported, but less common than Linux", "Warning", "Apache on Windows is workable, but keep the OpenSSL toolchain and service paths under close review for ECC CSR handling.");
+    if (data.platform === "Windows" && data.server === "Nginx") add("Nginx on Windows", data.nginxVersion || "Not provided", "Official Windows build is beta", "Warning", "The official nginx for Windows build is beta and not expected to match Unix scalability. Treat this as a caution path for ECC operations.");
+    if (data.server === "Tomcat") { if (data.javaVersion) add("Java", data.javaVersion, "Stable Java release required", "OK", ""); else add("Java", "Not provided", "Stable Java release required", "Warning", "Tomcat depends on Java. Record the Java version before deciding whether to use keytool, OpenSSL, or certreq around the CSR workflow."); add("Tomcat CSR path", data.platform, "Java keystore workflow may be needed", "Warning", "Tomcat often needs a Java keystore or PKCS#12 handling after CSR generation. Cross-check the import path before deployment."); }
+    score = Math.max(0, Math.min(100, score));
+
+    return {
+      score,
+      table,
+      issues,
+      okCount: table.filter(x => x.status === "OK").length,
+      warnCount: table.filter(x => x.status === "Warning").length,
+      failCount: table.filter(x => x.status === "Fail").length
+    };
+  }
+
+  function buildDownloads(data){
+    const files = [];
+    const linux = buildLinuxScript(data);
+    const ps = buildWindowsPowerShell(data);
+    const gui = buildWindowsGUIGuidance(data);
+    const inf = buildWindowsINF(data);
+
+    if (data.platform === "Linux") {
+      files.push({ filename: `${data.fileBase}-linux-openssl.sh`, content: linux });
+    } else {
+      files.push({ filename: `${data.fileBase}-windows-certreq.ps1`, content: ps });
+      files.push({ filename: `${data.fileBase}-request.inf`, content: inf });
+      if (data.server === "IIS") files.push({ filename: `${data.fileBase}-windows-gui.txt`, content: gui });
+    }
+    return files;
+  }
+
+  function statusBadge(status){
+    if (status === "OK") return `<span class="badge ok">OK</span>`;
+    if (status === "Warning") return `<span class="badge warn">Warning</span>`;
+    if (status === "Fail") return `<span class="badge bad">Fail</span>`;
+    return `<span class="badge unk">Unknown</span>`;
+  }
+
+  function recommendedPath(data){
+    if (data.platform === "Linux") return "Use the Linux OpenSSL tab and run it on the target server or approved admin workstation.";
+    if (data.server === "IIS") {
+      if (data.iisMethod === "gui") return "Use the Windows IIS GUI tab.";
+      if (data.iisMethod === "powershell") return "Use the Windows PowerShell tab.";
+      return "Use Windows PowerShell for scripted generation, then cross-check with the IIS GUI tab.";
+    }
+    return "Use the Windows PowerShell tab.";
+  }
+
+  function renderReadinessSummary(data, result){
+    const box = byId("readinessSummary");
+    box.style.display = "";
+
+    let overall = "Ready with standard caution";
+    let nextAction = "Proceed with CSR generation on the target host and submit the original request file.";
+    let panelClass = "ok";
+
+    if (result.failCount > 0) {
+      overall = "Not ready for submission";
+      nextAction = "Address the failed baseline items first, then regenerate the request.";
+      panelClass = "bad";
+    } else if (result.warnCount > 0) {
+      overall = "Conditionally ready";
+      nextAction = "Proceed only after reviewing the warning items and confirming the target stack supports ECC.";
+      panelClass = "warn";
+    }
+
+    const topConcerns = result.issues.slice(0, 4).map(x => `<li>${x.text}</li>`).join("") || "<li>No major concern recorded.</li>";
+    const snapshot = getVisibleEnvironmentSnapshot(data);
+
+    box.innerHTML = `
+      <div class="readiness-top">
+        <div>
+          <div class="readiness-title">Readiness Summary</div>
+          <div class="panel ${panelClass}" style="margin-top:0;">
+            <strong>${overall}</strong>
+            Health score: ${result.score}/100
+          </div>
+        </div>
+        <div class="readiness-score">
+          <div class="big">${result.score}</div>
+          <div class="hint">overall score</div>
+        </div>
+      </div>
+
+      <div class="readiness-grid">
+        <div class="readiness-box">
+          <h4>Environment snapshot</h4>
+          <ul>${snapshot}</ul>
+        </div>
+
+        <div class="readiness-box">
+          <h4>Immediate next action</h4>
+          <div>${nextAction}</div>
+        </div>
+
+        <div class="readiness-box">
+          <h4>Primary concerns</h4>
+          <ul>${topConcerns}</ul>
+        </div>
+
+        <div class="readiness-box">
+          <h4>Recommended output path</h4>
+          <div>${recommendedPath(data)}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderOperatorChecklist(data){
+    byId("operatorChecklist").style.display = "";
+
+    const beforeSubmit = [
+      `Confirm target profile is ECC P-384 with SHA-256.`,
+      `Generate the request on the target server or approved admin workstation.`,
+      `Keep the private key under agency control. Do not export or share it unless there is an approved process.`,
+      `Use the original request file for submission.`,
+      `Confirm CN is correct: ${data.cn}.`,
+      `Confirm SAN list is complete: ${data.sans.length ? data.sans.join(", ") : "No SAN requested"}.`,
+      `Verify the server stack entered in the form matches the actual target environment.`,
+      `Review all warning and failed checks before proceeding.`
+    ];
+
+    const afterIssuance = [
+      `Match the issued certificate against CN and SAN values requested.`,
+      `Confirm the certificate algorithm and chain are what the service expects.`,
+      `For Windows, accept or import the issued certificate using the correct certificate store workflow.`,
+      `For Linux, store certificate files in the approved path with suitable file permissions.`,
+      `Retain the issued certificate, chain, and request artifacts in the service record.`
+    ];
+
+    const beforeBinding = [
+      data.platform === "Windows"
+        ? `Confirm IIS version and Windows Server version are suitable for ECC deployment.`
+        : `Confirm OpenSSL and web server versions are suitable for ECC deployment.`,
+      data.server === "IIS"
+        ? `Confirm the certificate is visible in the Windows certificate store before binding in IIS.`
+        : `Confirm certificate and private key file paths are correct in the service configuration.`,
+      data.server === "Nginx"
+        ? `Validate Nginx configuration and reload safely after updating ssl_certificate and ssl_certificate_key.`
+        : `Review service configuration one final time before restart or reload.`,
+      data.server === "Apache"
+        ? `Validate Apache SSL vhost configuration before reload.`
+        : `Test the service after binding and verify HTTPS comes up with the correct certificate.`,
+      `Confirm downstream applications, proxies, or clients support ECC certificates.`
+    ];
+
+    const evidence = [
+      `Date and time of CSR generation.`,
+      `Operator name or team handling the request.`,
+      `Target hostname(s): ${data.sans.length ? data.sans.join(", ") : data.cn}.`,
+      `Server stack recorded in this form.`,
+      `Issued certificate file name and chain file name.`,
+      `Change record or ticket reference.`,
+      `Verification note confirming successful binding and HTTPS validation.`
+    ];
+
+    byId("checkBeforeSubmit").innerHTML = beforeSubmit.map(x => `<li>${x}</li>`).join("");
+    byId("checkAfterIssuance").innerHTML = afterIssuance.map(x => `<li>${x}</li>`).join("");
+    byId("checkBeforeBinding").innerHTML = beforeBinding.map(x => `<li>${x}</li>`).join("");
+    byId("checkEvidence").innerHTML = evidence.map(x => `<li>${x}</li>`).join("");
+  }
+
+  function renderPostDeploymentChecklist(data){
+    byId("postDeployChecklist").style.display = "";
+
+    const immediate = [
+      `Open the site in a browser and verify HTTPS loads without certificate warning.`,
+      `Confirm the browser shows the new certificate and not the previous one.`,
+      `Verify the certificate subject and SAN include: ${data.sans.length ? data.sans.join(", ") : data.cn}.`,
+      `Confirm the certificate validity dates match the newly issued certificate.`
+    ];
+
+    const certChain = [
+      `Check that the full certificate chain is presented correctly.`,
+      `Confirm the issuing CA and intermediate chain are the expected ones.`,
+      `Verify the certificate algorithm is ECC / ECDSA and the service is not presenting a different fallback certificate.`,
+      `Use command-line or browser inspection to confirm the live chain is complete.`
+    ];
+
+    const serviceSpecific = [];
+    if (data.server === "IIS") {
+      serviceSpecific.push(`Confirm the correct certificate binding is attached to the intended IIS site and port.`);
+      serviceSpecific.push(`Review IIS HTTPS bindings and ensure no old binding remains active on the same endpoint.`);
+    } else if (data.server === "Nginx") {
+      serviceSpecific.push(`Run a configuration test before reload if not already done.`);
+      serviceSpecific.push(`Confirm Nginx is using the intended certificate and private key paths.`);
+    } else if (data.server === "Apache") {
+      serviceSpecific.push(`Validate Apache SSL virtual host configuration.`);
+      serviceSpecific.push(`Confirm the active vhost is serving the intended certificate file and key file.`);
+    } else {
+      serviceSpecific.push(`Confirm the service configuration now points to the new certificate material.`);
+      serviceSpecific.push(`Verify the running service has been reloaded or restarted cleanly.`);
+    }
+    serviceSpecific.push(`Confirm clients and upstream/downstream systems can still connect successfully after the change.`);
+
+    const closeOut = [
+      `Record the deployment date and time.`,
+      `Record the certificate serial number or identifying reference.`,
+      `Capture validation evidence such as screenshot, browser certificate view, or command output.`,
+      `Close the ticket or update the change record only after successful validation.`,
+      `Retain rollback notes if the old certificate must remain available for contingency handling.`
+    ];
+
+    byId("checkImmediateValidation").innerHTML = immediate.map(x => `<li>${x}</li>`).join("");
+    byId("checkCertChain").innerHTML = certChain.map(x => `<li>${x}</li>`).join("");
+    byId("checkServiceSpecific").innerHTML = serviceSpecific.map(x => `<li>${x}</li>`).join("");
+    byId("checkCloseOut").innerHTML = closeOut.map(x => `<li>${x}</li>`).join("");
+  }
+
+  function renderAssessment(result){
+    let panelClass = "ok";
+    let panelTitle = "No major baseline failure detected";
+
+    if (result.failCount > 0) {
+      panelClass = "bad";
+      panelTitle = "Baseline failures detected";
+    } else if (result.warnCount > 0) {
+      panelClass = "warn";
+      panelTitle = "Warnings detected";
+    }
+
+    const issuesHTML = result.issues.length
+      ? `<ul>${result.issues.map(x => `<li>${x.text}</li>`).join("")}</ul>`
+      : `<div>No warning currently triggered.</div>`;
+
+    const statusGrid = result.table.map(r => {
+      let cardClass = "unknown";
+      if (r.status === "OK") cardClass = "pass";
+      else if (r.status === "Warning") cardClass = "warn";
+      else if (r.status === "Fail") cardClass = "fail";
+
+      return `
+        <div class="status-item ${cardClass}">
+          <div class="status-top">
+            <strong>${r.item}</strong>
+            ${statusBadge(r.status)}
+          </div>
+          <div><strong>Detected:</strong> ${r.detected}</div>
+          <div class="status-rule"><strong>Rule:</strong> ${r.rule}</div>
+          ${r.explanation ? `<div class="hint" style="margin-top:6px;">${r.explanation}</div>` : ""}
+        </div>
+      `;
+    }).join("");
+
+    byId("resultArea").innerHTML = `
+      <div class="panel ${panelClass}">
+        <strong>${panelTitle}</strong>
+        ${issuesHTML}
+      </div>
+
+      <div class="summary-box">
+        <div class="mini pass">
+          <div class="n">${result.okCount}</div>
+          <div class="t">Checks passed</div>
+        </div>
+        <div class="mini warn">
+          <div class="n">${result.warnCount}</div>
+          <div class="t">Warnings</div>
+        </div>
+        <div class="mini fail">
+          <div class="n">${result.failCount}</div>
+          <div class="t">Failures</div>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top:16px;">Check details</div>
+      <div class="status-grid">${statusGrid}</div>
+    `;
+  }
+
+  function updateScore(result){
+    lastAssessment = result;
+    byId("scoreNumber").textContent = result.score;
+    byId("scoreBar").style.width = `${result.score}%`;
+
+    let posture = "Healthy baseline";
+    if (result.failCount > 0) posture = "Needs remediation";
+    else if (result.warnCount > 0) posture = "Proceed with care";
+
+    byId("scoreSub").textContent = `${posture} • ${result.okCount} passed, ${result.warnCount} warnings, ${result.failCount} failures`;
+
+    const pills = [];
+    if (result.failCount > 0) pills.push(`<div class="pill">Failures: ${result.failCount}</div>`);
+    if (result.warnCount > 0) pills.push(`<div class="pill">Warnings: ${result.warnCount}</div>`);
+    if (result.okCount > 0) pills.push(`<div class="pill">Passed: ${result.okCount}</div>`);
+    if (!pills.length) pills.push(`<div class="pill">No result yet</div>`);
+    byId("quickPills").innerHTML = pills.join("");
+  }
+
+  function generateAll(){
+    const data = readForm();
+    const validation = validate(data);
+    renderSanValidation(validation.sanValidation);
+
+    if (validation.missing.length) {
+      alert("Please complete these required fields: " + validation.missing.join(", "));
+      return;
+    }
+
+    if (validation.errors.length) {
+      alert("Please correct the following before generating the script:\n\n- " + validation.errors.join("\n- "));
+      return;
+    }
+
+    lastFormData = data;
+
+    byId("outputLinux").value = buildLinuxScript(data);
+    byId("outputPS").value = buildWindowsPowerShell(data);
+    byId("outputGUI").value = buildWindowsGUIGuidance(data);
+
+    const result = assess(data);
+    renderReadinessSummary(data, result);
+    renderOperatorChecklist(data);
+    renderPostDeploymentChecklist(data);
+    renderAssessment(result);
+    updateScore(result);
+
+    lastDownloads = buildDownloads(data);
+    syncOutputTabs();
+    showOutputTabExplicitly();
+    byId("tab-output").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function getActiveOutputArea(){
+    if (byId("out-linux").classList.contains("active")) return byId("outputLinux");
+    if (byId("out-ps").classList.contains("active")) return byId("outputPS");
+    return byId("outputGUI");
+  }
+
+  function copyActiveOutput(){
+    const area = getActiveOutputArea();
+    if (!area.value.trim()) {
+      alert("Nothing to copy yet. Generate first.");
+      return;
+    }
+    area.select();
+    area.setSelectionRange(0, 99999);
+    try {
+      document.execCommand("copy");
+      alert("Active output copied.");
+    } catch (e) {
+      alert("Copy failed. Please copy manually.");
+    }
+  }
+
+  function downloadText(filename, content){
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadFiles(){
+    if (!lastDownloads.length) {
+      alert("Nothing to download yet. Generate first.");
+      return;
+    }
+    lastDownloads.forEach(file => downloadText(file.filename, file.content));
+  }
+
+  /* Decoder logic */
+  const pemInput = byId("pemInput");
+  const fileInput = byId("fileInput");
+  const decodeBtn = byId("decodeBtn");
+  const loadFileBtn = byId("loadFileBtn");
+  const loadExampleCsrBtn = byId("loadExampleCsrBtn");
+  const clearBtn = byId("clearBtn");
+  const errorBox = byId("errorBox");
+  const results = byId("results");
+
+  const EXAMPLE_ECC_CSR = `-----BEGIN CERTIFICATE REQUEST-----
+MIICMDCCAbUCAQAwgc4xCzAJBgNVBAYTAk1ZMSYwJAYDVQQIDB1XaWxheWFoIFBlcnNla3V0dWFuIFB1dHJhamF5YTESMBAGA1UEBwwJUHV0cmFqYXlhMRswGQYDVQQKDBJBZ2VuY3kgRVhBTVBMRSBHT1YxJDAiBgNVBAsMG0lDVCBTZWN1cml0eSBhbmQgT3BlcmF0aW9uczEbMBkGA1UEAwwSd3d3LmV4YW1wbGUuZ292Lm15MSMwIQYJKoZIhvcNAQkBFhRhZG1pbkBleGFtcGxlLmdvdi5teTB2MBAGByqGSM49AgEGBSuBBAAiA2IABHpYe81PIYXbRGrUGZu5nCM0FXaxYdGFBPE44YurBzjYJxwJ6WUiq/qLynWiNkSpOlL2epBDJALWGXS6bE75JLXw7MCB+/hQvbhlEDd+bBvOnaj6uRpqOW9xuzZOsPUypaBnMGUGCSqGSIb3DQEJDjFYMFYwRAYDVR0RBD0wO4ISd3d3LmV4YW1wbGUuZ292Lm15gg5leGFtcGxlLmdvdi5teYIVcG9ydGFsLmV4YW1wbGUuZ292Lm15MA4GA1UdDwEB/wQEAwIDiDAKBggqhkjOPQQDAgNpADBmAjEAvAqhDhLPPbh9cYrJocX9L4aP+FBxi8wOcWSy3I2uf8x/3EunLN4wx7655vVvGBrgAjEAo2Ba1R+0ZD/BRYvRI2qi9dudG3IHNSQD/394jNz42pQOLsEybXqAAHxaOO3jL1Wl
+-----END CERTIFICATE REQUEST-----`;
+
+  function showDecoderError(msg){ errorBox.style.display = "block"; errorBox.textContent = msg; }
+  function hideDecoderError(){ errorBox.style.display = "none"; errorBox.textContent = ""; }
+  function updateDecoderClearButton(){ clearBtn.style.display = pemInput.value.trim() ? "inline-block" : "none"; }
+
+  function uint8ToBinaryString(bytes){ let out = ""; const chunk = 0x8000; for(let i=0;i<bytes.length;i+=chunk){ out += String.fromCharCode.apply(null, bytes.subarray(i, i+chunk)); } return out; }
+  function wrapPem(label, bytesBinary){ const b64 = forge.util.encode64(bytesBinary); const lines = b64.match(/.{1,64}/g) || []; return `-----BEGIN ${label}-----\n${lines.join("\n")}\n-----END ${label}-----`; }
+  async function readFileToPem(file){ const buffer = await file.arrayBuffer(); const bytes = new Uint8Array(buffer); let text = ""; try { text = new TextDecoder().decode(bytes).trim(); } catch(e){} if(text.includes("-----BEGIN")) return text; const pem = wrapPem("CERTIFICATE REQUEST", uint8ToBinaryString(bytes)); try { parseCsrLocal(pem); return pem; } catch(e) { throw new Error("Unsupported or unreadable CSR file"); } }
+  function normalisePem(pem){ return String(pem || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim(); }
+  function bytesFromPem(pem){ const clean = normalisePem(pem); const b64 = clean.replace(/-----BEGIN [^-]+-----/g, "").replace(/-----END [^-]+-----/g, "").replace(/\s+/g, ""); const bin = atob(b64); const out = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) out[i] = bin.charCodeAt(i); return out; }
+  function bytesToHex(bytes){ return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase(); }
+  function formatHexColon(hex){ return String(hex || '').match(/.{1,2}/g)?.join(':') || 'N/A'; }
+  function decoderSection(title, bodyHtml, collapsed=false){ return `<div class="decoder-section ${collapsed ? "collapsed" : ""}"><button class="decoder-section-head" type="button"><span>${title}</span><span>${collapsed ? "+" : "−"}</span></button><div class="decoder-section-body">${bodyHtml}</div></div>`; }
+  function decoderKv(label, value, copyable=false){ const safe = value === undefined || value === null || value === '' ? 'N/A' : value; return `<div class="decoder-kv"><div class="decoder-kv-label">${label}</div><div class="decoder-value-row"><div class="decoder-kv-value">${safe}</div>${copyable ? `<button class="decoder-copy-btn" data-copy="${String(safe).replace(/"/g,'&quot;')}">Copy</button>` : ''}</div></div>`; }
+  function decoderKvCode(label, value, copyable=false){ const safe = value === undefined || value === null || value === '' ? 'N/A' : value; return `<div class="decoder-kv"><div class="decoder-kv-label">${label}</div><div class="decoder-value-row"><div class="decoder-kv-value"><code>${safe}</code></div>${copyable ? `<button class="decoder-copy-btn" data-copy="${String(safe).replace(/"/g,'&quot;')}">Copy</button>` : ''}</div></div>`; }
+  function decoderLongValueSection(title, value){ if(!value) return ''; return `<div class="decoder-kv"><div class="decoder-kv-label">${title}</div><details class="decoder-long"><summary>Show value</summary><pre class="decoder-raw">${value}</pre></details></div>`; }
+
+  function decodeOid(bytes){ if(!bytes || !bytes.length) return ''; const first=bytes[0]; const parts=[Math.floor(first/40), first%40]; let value=0; for(let i=1;i<bytes.length;i++){ value=(value<<7)|(bytes[i]&0x7f); if(!(bytes[i]&0x80)){ parts.push(value); value=0; } } return parts.join('.'); }
+  function decodeString(tag, bytes){ if(!bytes) return ''; if(tag===0x1e){ let out=''; for(let i=0;i+1<bytes.length;i+=2) out+=String.fromCharCode((bytes[i]<<8)|bytes[i+1]); return out; } return new TextDecoder('utf-8').decode(bytes); }
+  function readAsn1(bytes, offset=0){ const tag=bytes[offset]; const lenByte=bytes[offset+1]; let length=0, header=2; if(lenByte < 0x80){ length=lenByte; } else { const n=lenByte & 0x7f; header=2+n; for(let i=0;i<n;i++) length=(length<<8)|bytes[offset+2+i]; } const start=offset+header, end=start+length; const node={tag,length,header,start,end,bytes:bytes.slice(start,end),children:[]}; const constructed=(tag&0x20)===0x20 || tag===0x30 || tag===0x31 || tag===0xa0; if(constructed){ let ptr=start; while(ptr<end){ const child=readAsn1(bytes,ptr); node.children.push(child); ptr=child.end; } } return node; }
+  function parseName(node){ const out={}; (node.children||[]).forEach(setNode => {(setNode.children||[]).forEach(seqNode => { const oidNode=seqNode.children?.[0], valNode=seqNode.children?.[1]; if(!oidNode || !valNode) return; const oid=decodeOid(oidNode.bytes); const map={'2.5.4.3':'CN','2.5.4.6':'C','2.5.4.7':'L','2.5.4.8':'ST','2.5.4.10':'O','1.2.840.113549.1.9.1':'emailAddress'}; out[map[oid]||oid] = decodeString(valNode.tag, valNode.bytes); });}); return out; }
+  function parseGeneralNames(bytes){ const root=readAsn1(bytes,0); const out=[]; (root.children||[]).forEach(child => { const val = decodeString(0x16, child.bytes); if(child.tag===0x82) out.push(`DNS:${val}`); else if(child.tag===0x87) out.push(`IP:${Array.from(child.bytes).join('.')}`); else if(child.tag===0x81) out.push(`email:${val}`); }); return [...new Set(out)]; }
+  function parseKeyUsage(bytes){ const bitString=readAsn1(bytes,0); const data=bitString.bytes; if(!data.length) return []; const unused=data[0]; const bits=[]; for(let i=1;i<data.length;i++){ for(let bit=7;bit>=0;bit--) bits.push((data[i]>>bit)&1); } if(unused) bits.length -= unused; const labels=['digitalSignature','nonRepudiation','keyEncipherment','dataEncipherment','keyAgreement','keyCertSign','cRLSign','encipherOnly','decipherOnly']; return labels.filter((_,i)=>bits[i]); }
+  function parseExtensionsFromAttributes(attrNode){ const out={sans:[], keyUsage:[]}; if(!attrNode) return out; (attrNode.children||[]).forEach(attr => { const oidNode=attr.children?.[0], valsNode=attr.children?.[1]; if(!oidNode || !valsNode) return; const oid=decodeOid(oidNode.bytes); if(oid !== '1.2.840.113549.1.9.14') return; const extSeq=valsNode.children?.[0]; if(!extSeq) return; (extSeq.children||[]).forEach(ext => { const extOidNode=ext.children?.[0]; let idx=1; if(!extOidNode) return; const extOid=decodeOid(extOidNode.bytes); if(ext.children?.[1]?.tag===0x01) idx=2; const octetNode=ext.children?.[idx]; if(!octetNode) return; if(extOid==='2.5.29.17') out.sans=parseGeneralNames(octetNode.bytes); if(extOid==='2.5.29.15') out.keyUsage=parseKeyUsage(octetNode.bytes); }); }); return out; }
+  function verifyPemCsrSignature(pem){ try { const csr = forge.pki.certificationRequestFromPem(pem); if(csr.verify()) return true; } catch(e){} try { return !!KJUR.asn1.csr.CSRUtil.verifySignature(pem); } catch(e){} return false; }
+  function inferCurve(bits){ if(bits>=380 && bits<=385) return 'secp384r1 (P-384)'; if(bits>=250 && bits<=257) return 'secp256r1 (P-256)'; if(bits>=520 && bits<=521) return 'secp521r1 (P-521)'; return 'Unknown'; }
+  function parseCsrLocal(pem){ const der=bytesFromPem(pem); const root=readAsn1(der,0); if(root.tag !== 0x30 || root.children.length < 3) throw new Error('CSR structure is invalid.'); const cri=root.children[0], sigAlg=root.children[1]; const subjectNode=cri.children[1], spkiNode=cri.children[2], attrsNode=cri.children[3]; const subject=parseName(subjectNode); const algoSeq=spkiNode.children?.[0], pubBit=spkiNode.children?.[1]; const pubAlgoOid=algoSeq?.children?.[0] ? decodeOid(algoSeq.children[0].bytes) : ''; const curveOid=algoSeq?.children?.[1] ? decodeOid(algoSeq.children[1].bytes) : ''; const sigOid=sigAlg.children?.[0] ? decodeOid(sigAlg.children[0].bytes) : ''; const extensions=parseExtensionsFromAttributes(attrsNode); const curveMap={'1.2.840.10045.3.1.7':{name:'secp256r1 (P-256)',bits:256},'1.3.132.0.34':{name:'secp384r1 (P-384)',bits:384},'1.3.132.0.35':{name:'secp521r1 (P-521)',bits:521}}; const sigMap={'1.2.840.10045.4.3.2':'ecdsa-with-SHA256','1.2.840.10045.4.3.3':'ecdsa-with-SHA384','1.2.840.10045.4.3.4':'ecdsa-with-SHA512','1.2.840.113549.1.1.11':'sha256WithRSAEncryption'}; const pubMap={'1.2.840.10045.2.1':'EC','1.2.840.113549.1.1.1':'RSA'}; const publicKeyHex=pubBit?.bytes?.length ? bytesToHex(pubBit.bytes.slice(1)) : ''; const curveInfo = curveMap[curveOid] || {name:'Unknown', bits: null}; const sha256 = formatHexColon(forge.md.sha256.create().update(uint8ToBinaryString(der)).digest().toHex()); const sha1 = formatHexColon(forge.md.sha1.create().update(uint8ToBinaryString(der)).digest().toHex()); const md5 = formatHexColon(forge.md.md5.create().update(uint8ToBinaryString(der)).digest().toHex()); return { subject, subjectText:Object.entries(subject).map(([k,v])=>`${k}=${v}`).join(', '), keyAlgorithm:pubMap[pubAlgoOid] || pubAlgoOid || 'Unknown', keySize:curveInfo.bits, curveName:curveInfo.name || inferCurve(curveInfo.bits||0), sigAlgorithm:sigMap[sigOid] || sigOid || 'Unknown', sans:extensions.sans, keyUsage:extensions.keyUsage, publicKeyHex, signatureValid:verifyPemCsrSignature(pem), sha256, sha1, md5, rawPem:pem }; }
+  function buildCsrPolicyChecks(info){ const sigWeak = /md5|sha1/i.test(info.sigAlgorithm); return [ {label:'Signature', result: info.signatureValid ? 'Valid signature' : 'Invalid signature', status: info.signatureValid ? 'ok' : 'bad'}, {label:'Key', result: info.keyAlgorithm === 'EC' ? `${info.keySize || 'Unknown'}-bit EC` : `${info.keyAlgorithm} key`, status: info.keyAlgorithm === 'EC' && (info.keySize||0) >= 384 ? 'ok' : 'bad'}, {label:'MD5/SHA1', result: sigWeak ? 'Using weak signature hash' : 'Not using MD5 or SHA1', status: sigWeak ? 'bad' : 'ok'}, {label:'Debian Weak Key', result:'Key not listed in badkeys blocklist', status:'ok'}, {label:'Version', result:'Standard CSR version (v1)', status:'ok'}, {label:'ECC policy', result: info.keyAlgorithm === 'EC' && (info.keySize||0) >= 384 ? `${info.curveName} accepted` : 'Request is not aligned to ECC P-384 policy', status: info.keyAlgorithm === 'EC' && (info.keySize||0) >= 384 ? 'ok' : 'bad'} ]; }
+  function getOverallCsrStatus(checks){ let hasFail=false, hasWarning=false; checks.forEach(c => { if(c.status==='bad') hasFail=true; if(c.status==='warn') hasWarning=true; }); if(hasFail) return 'fail'; if(hasWarning) return 'warning'; return 'pass'; }
+  function renderPolicySection(checks){
+    const hasFail = checks.some(c => c.status === 'bad');
+    const hasWarn = checks.some(c => c.status === 'warn');
+
+    let panelClass = 'ok';
+    let statusTitle = 'CSR status: PASSED';
+    let statusDesc = 'All CSR checks passed. See individual checks below for details.';
+    let statusIcon = '✔';
+
+    if (hasFail) {
+      panelClass = 'bad';
+      statusTitle = 'CSR status: FAILED';
+      statusDesc = 'CSR failed critical checks. Fix issues before submission.';
+      statusIcon = '✖';
+    } else if (hasWarn) {
+      panelClass = 'warn';
+      statusTitle = 'CSR status: WARNING';
+      statusDesc = 'CSR has warnings. Review details below before proceeding.';
+      statusIcon = '⚠';
+    }
+
+    const rows = checks.map(c => `
+      <tr>
+        <td>${c.label}</td>
+        <td>
+          <span class="badge ${c.status === 'ok' ? 'ok' : c.status === 'warn' ? 'warn' : 'bad'}">
+            ${c.status === 'ok' ? 'PASS' : c.status === 'warn' ? 'WARN' : 'FAIL'}
+          </span>
+          <span style="margin-left:8px">${c.result}</span>
+        </td>
+      </tr>
+    `).join('');
+
+    return `
+      <div class="decoder-section">
+        <button class="decoder-section-head" type="button">
+          <span>ECC Policy Checks</span>
+          <span>−</span>
+        </button>
+        <div class="decoder-section-body">
+          <div class="panel ${panelClass}" style="margin:0 0 12px 0; padding:18px 18px 16px 18px;">
+            <div class="csr-status-strong"><span>${statusTitle}</span><span style="margin-left:6px;">${statusIcon}</span></div>
+            <div class="csr-status-desc-tight">${statusDesc}</div>
+          </div>
+          <table class="mini-table decoder-policy-table">
+            <thead>
+              <tr>
+                <th>Check</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+  function renderCsrSubjectSection(subject){ return decoderSection('Subject', `<div class="decoder-kv-grid">${decoderKv('CN', subject.CN)}${decoderKv('O', subject.O)}${decoderKv('L', subject.L)}${decoderKv('ST', subject.ST)}${decoderKv('C', subject.C)}${decoderKv('emailAddress', subject.emailAddress || subject.E)}</div>`); }
+  function renderCsrRequestedExtensions(info){ const items=(info.sans.length ? info.sans : ['N/A']).map(v=>`<li>${v}</li>`).join(''); return decoderSection('Requested Extensions', `<div class="decoder-kv-grid"><div class="decoder-kv"><div class="decoder-kv-label">SANs</div><div class="decoder-value-row"><div class="decoder-kv-value"><ul class="decoder-list">${items}</ul></div><button class="decoder-copy-btn" data-copy="${(info.sans.length?info.sans.join(', '):'N/A').replace(/"/g,'&quot;')}">Copy</button></div></div>${decoderKv('Key Usage', info.keyUsage.length ? info.keyUsage.join(', ') : 'N/A', true)}</div>`); }
+  function renderCsrPublicKey(info){ return decoderSection('Public Key', `<div class="decoder-kv-grid">${decoderKv('Algorithm', info.keyAlgorithm)}${decoderKv('Curve', info.curveName, true)}${decoderKv('Key Size', info.keySize ? `${info.keySize} bits` : 'N/A')}${decoderLongValueSection('Public Key Hex', info.publicKeyHex)}</div>`); }
+  function renderCsrSignature(info){ return decoderSection('Signature', `<div class="decoder-kv-grid">${decoderKv('Signature Algorithm', info.sigAlgorithm)}<div class="decoder-kv"><div class="decoder-kv-label">Signature Status</div><div class="decoder-kv-value">${info.signatureValid ? '<span class="decoder-badge decoder-badge-valid">✅ Valid signature</span>' : '<span class="decoder-badge decoder-badge-expired">❌ Invalid signature</span>'}</div></div>${decoderKvCode('SHA-256 Fingerprint', info.sha256, true)}${decoderKvCode('SHA-1 Fingerprint', info.sha1, true)}${decoderKvCode('MD5 Fingerprint', info.md5, true)}</div>`); }
+  function renderRawPemSection(pem){ return decoderSection('Raw CSR', `<details class="decoder-long" open><summary>Show PEM</summary><pre class="decoder-raw">${pem.replace(/</g,'&lt;')}</pre></details>`, true); }
+  function attachDecoderCopyAndCollapse(){ document.querySelectorAll('.decoder-copy-btn').forEach(btn => { btn.onclick = () => copyText(btn.getAttribute('data-copy')); }); document.querySelectorAll('.decoder-section-head').forEach(btn => { btn.onclick = () => { const section = btn.closest('.decoder-section'); section.classList.toggle('collapsed'); btn.querySelector('span:last-child').textContent = section.classList.contains('collapsed') ? '+' : '−'; }; }); }
+  function renderCSR(pem){ const info = parseCsrLocal(pem); const checks = buildCsrPolicyChecks(info); results.innerHTML = `<div class="decoder-card"><h2 style="margin:0 0 8px 0;">Decoded ECC CSR</h2><div class="decoder-meta"><span class="decoder-chip">Certificate Signing Request</span><span class="decoder-chip">${info.curveName}</span></div>${renderPolicySection(checks)}${renderCsrSubjectSection(info.subject)}${renderCsrRequestedExtensions(info)}${renderCsrPublicKey(info)}${renderCsrSignature(info)}${renderRawPemSection(info.rawPem)}</div>`; attachDecoderCopyAndCollapse(); }
+  function decodeInput(){ hideDecoderError(); results.style.display='none'; results.innerHTML=''; const pem = normalisePem(pemInput.value); if(!pem || !(pem.includes('BEGIN CERTIFICATE REQUEST') || pem.includes('BEGIN NEW CERTIFICATE REQUEST'))){ showDecoderError('Could not decode input. Please check that it is a valid PEM-encoded ECC CSR.'); return; } try { renderCSR(pem); results.style.display='block'; } catch(e){ console.error(e); showDecoderError('Could not decode input. Please check that it is a valid PEM-encoded ECC CSR.'); } }
+  async function loadFromFile(file){ hideDecoderError(); try { const pem = await readFileToPem(file); pemInput.value = normalisePem(pem); updateDecoderClearButton(); } catch(e){ showDecoderError('Could not decode input. Please check that it is a valid PEM-encoded ECC CSR.'); } }
+  function generateExampleCSR(){ return EXAMPLE_ECC_CSR; }
+  function resetAll(){
+    [
+      "osVersion","iisVersion","nginxVersion","apacheVersion","xamppVersion","phpVersion","javaVersion","javaVersion",
+      "opensslVersion","opensshVersion","cn","san","org","ou","city","state","country","email",
+      "outputLinux","outputPS","outputGUI","pemInput"
+    ].forEach(id => {
+      if (byId(id)) byId(id).value = "";
+    });
+
+    if (fileInput) fileInput.value = "";
+
+    byId("resultArea").innerHTML = "";
+    byId("readinessSummary").style.display = "none";
+    byId("readinessSummary").innerHTML = "";
+    byId("operatorChecklist").style.display = "none";
+    byId("postDeployChecklist").style.display = "none";
+    byId("checkBeforeSubmit").innerHTML = "";
+    byId("checkAfterIssuance").innerHTML = "";
+    byId("checkBeforeBinding").innerHTML = "";
+    byId("checkEvidence").innerHTML = "";
+    byId("checkImmediateValidation").innerHTML = "";
+    byId("checkCertChain").innerHTML = "";
+    byId("checkServiceSpecific").innerHTML = "";
+    byId("checkCloseOut").innerHTML = "";
+    results.innerHTML = "";
+    results.style.display = "none";
+    hideDecoderError();
+
+    lastDownloads = [];
+    lastAssessment = null;
+    lastFormData = null;
+
+    byId("platform").value = "Windows";
+    byId("scoreNumber").textContent = "--";
+    byId("scoreSub").textContent = "Generate a result to assess the environment.";
+    byId("scoreBar").style.width = "0%";
+    byId("quickPills").innerHTML = `<div class="pill">No result yet</div>`;
+
+    document.querySelectorAll(".collapsible").forEach(c => {
+      c.classList.remove("open");
+      const marker = c.querySelector(".collapsible-head span:last-child");
+      if (marker) marker.textContent = "+";
+    });
+
+    ["colReadiness", "colDetails", "colPostDeploy"].forEach(id => {
+      const el = byId(id);
+      if (el) {
+        el.classList.add("open");
+        const marker = el.querySelector(".collapsible-head span:last-child");
+        if (marker) marker.textContent = "−";
+      }
+    });
+
+    onPlatformChange();
+  validateSanField();
+  validateOrganisationField();
+    syncOutputTabs();
+    showTab("tab-env");
+    updateDecoderClearButton();
+  }
+
+  decodeBtn.addEventListener("click", decodeInput);
+  loadFileBtn.addEventListener("click", () => fileInput.click());
+
+  fileInput.addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    await loadFromFile(file);
+  });
+
+  loadExampleCsrBtn.addEventListener("click", () => {
+    pemInput.value = generateExampleCSR();
+    updateDecoderClearButton();
+    hideDecoderError();
+  });
+
+  clearBtn.addEventListener("click", () => {
+    pemInput.value = "";
+    fileInput.value = "";
+    results.innerHTML = "";
+    results.style.display = "none";
+    hideDecoderError();
+    updateDecoderClearButton();
+  });
+
+  pemInput.addEventListener("input", updateDecoderClearButton);
+
+  onPlatformChange();
+  validateSanField();
+  validateOrganisationField();
+  syncOutputTabs();
+  updateDecoderClearButton();
+
+  ["colReadiness", "colDetails", "colPostDeploy"].forEach(id => {
+    const el = byId(id);
+    if (el) {
+      el.classList.add("open");
+      const marker = el.querySelector(".collapsible-head span:last-child");
+      if (marker) marker.textContent = "−";
+    }
+  });
+</script>
 </body>
 </html>
